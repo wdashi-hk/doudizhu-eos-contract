@@ -8,11 +8,20 @@ class doudizhu : public eosio::contract {
       struct poker{
     	  uint8_t suits;					//花色
     	  uint8_t point;					//点数
+    	  poker(uint8_t _suits, uint8_t _point){
+    		  suits = _suits;
+    		  point = _point;
+    	  }
       };
       struct pokerData{
     	  uint8_t type;						//牌型
     	  uint8_t suits;					//花色
     	  uint8_t point;					//点数
+    	  pokerData(uint8_t _type, uint8_t _suits, uint8_t _point){
+    		  type = _type;
+    		  suits = _suits;
+    		  point = _point;
+    	  }
       };
       struct player{
     	  account_name player_name;			//用户id
@@ -40,11 +49,9 @@ class doudizhu : public eosio::contract {
       struct chupai_data{
     	  uint8_t player_index;
     	  pokerData data;
-    	  bool buchu;
-    	  chupai_data(uint8_t _index, pokerData _data, bool _buchu){
+    	  chupai_data(uint8_t _index, pokerData _data){
     		  player_index = _index;
     		  data = _data;
-    		  buchu = _buchu;
     	  }
       };
       struct game{
@@ -245,19 +252,21 @@ class doudizhu : public eosio::contract {
 		  eosio_assert(pokerarray.size(), "error poker!");
 		  pokerData pd = poker2data(pokerarray);
 		  pokerData olddata;
-		  for(int i = 0; i < g.poker_data_array.size(); ++i){
-			  pokerData d = g.poker_data_array.at(i);
-			  if(d.point != 0) olddata = d;
+		  if(g.chupai_data_array.size()){
+			  olddata = g.chupai_data_array.back().data;
 		  }
 		  if(vs(pd, olddata)){
 			  player p = g.players.at(playerindex);
 			  eosio_assert(deletepoker(pokerarray, p.poker_array), "error poker! can't delete");
 			  g.turn_index = (g.turn_index + 1) % MAX_PLAYER_NUM;
+			  g.chupai_data_array.push_back(chupai_data(playerindex, pd));
 			  if(p.poker_array.size() == 0){  //出完牌了，游戏结束
 				  endgame(gameid, p);
 				  return;
 			  }
-			  checkround(gameid);
+			  if(g.chupai_data_array.size() == MAX_PLAYER_NUM){
+				  g.turn_index = playerindex;
+			  }
 		  }
       }
 
@@ -269,8 +278,15 @@ class doudizhu : public eosio::contract {
 		  eosio_assert(playeringame(name, gameid, playerindex), "player not in this game!");
 		  g.turn_index = (g.turn_index + 1) % MAX_PLAYER_NUM;
 		  pokerData pd;
-		  g.poker_data_array.push_back(pd);
-		  checkround(gameid);
+		  g.chupai_data_array.push_back(chupai_data(playerindex, pd));
+		  if(g.chupai_data_array.size() == MAX_PLAYER_NUM){
+			  if(g.chupai_data_array.at(MAX_PLAYER_NUM - 2).data.point){
+				  g.turn_index = g.chupai_data_array.at(MAX_PLAYER_NUM - 2).player_index;
+			  }
+			  else{
+				  g.turn_index = g.chupai_data_array.at(0).player_index;
+			  }
+		  }
       }
 
       //config
@@ -302,6 +318,25 @@ class doudizhu : public eosio::contract {
       //随机发牌
       vector<poker> randompoker(){
     	  vector<poker> pokerarray;
+    	  pokerarray.push_back(poker(14,0));
+    	  pokerarray.push_back(poker(14,1));
+    	  for(int i = 1; i <= 13; ++i){
+    		  for(int j = 0; j <= 3; ++j){
+    			  pokerarray.push_back(poker(i,j));
+    		  }
+    	  }
+
+    	  for(int i = 0; i < 54; ++i){
+    		  uint8_t r = random() % 54;
+    		  uint8_t suits, point;
+    		  suits = pokerarray.at(i).suits;
+    		  point = pokerarray.at(i).point;
+    		  pokerarray.at(i).suits = pokerarray.at(r).suits;
+    		  pokerarray.at(i).point = pokerarray.at(r).point;
+    		  pokerarray.at(r).suits = suits;
+    		  pokerarray.at(r).point = point;
+    	  }
+
     	  return pokerarray;
       }
       //长期不准备，强制让用户离开
@@ -373,8 +408,127 @@ class doudizhu : public eosio::contract {
     	  return pokerarray;
       }
 
+      //给牌排序
+      vector<poker> sortpoker(vector<poker> pokerarray){
+    	  //TODO:
+    	  return pokerarray;
+      }
+
+      //判断是否为飞机
+      pokerData plane(vector<poker> pokerarray){
+    	  //TODO
+    	  return pokerData(0, 0, 0);
+      }
+      //判断是否为顺子
+      pokerData order(vector<poker> pokerarray){
+    	  //TODO
+    	  return pokerData(0, 0, 0);
+      }
+
       pokerData poker2data(vector<poker> pokerarray){
     	  pokerData pd;
+    	  vector<poker> s = sortpoker(pokerarray);
+    	  uint8_t len = s.size();
+    	  if(len == 0){
+    		  return pd;
+    	  }
+    	  else if(len == 1){
+    		  return pokerData(1, s.at(0).suits, s.at(0).point);
+    	  }
+    	  else if(len == 2){
+    		  if(s.at(0).point == 14 && s.at(1).point == 14 && s.at(0).suits == 1 && s.at(0).suits == 0){  //王炸
+    			  return pokerData(13, s.at(0).suits, s.at(0).point);
+    		  }
+    		  else if(s.at(0).point == s.at(1).point){ //对子
+    			  return pokerData(2, s.at(0).suits, s.at(0).point);
+    		  }
+    		  else{
+    			  return pd;
+    		  }
+    	  }
+    	  else if(len == 3){
+    		  if(s.at(0).point == s.at(1).point && s.at(1).point == s.at(2).point){ //三条
+    			  return pokerData(3, s.at(0).suits, s.at(0).point);
+    		  }
+    		  else{
+    			  return pd;
+    		  }
+    	  }
+    	  else if(len == 4){ //炸弹或者飞机
+    		  if(s.at(0).point == s.at(1).point && s.at(1).point == s.at(2).point && s.at(2).point == s.at(3).point){ //炸弹
+    			  return pokerData(12, s.at(0).suits, s.at(0).point);
+    		  }
+    		  else{
+    			  return plane(s);
+    		  }
+    	  }
+    	  else if(len == 5){ //3带2 或者是 顺子
+    		  pokerData p = plane(s);
+    		  if(p.type == 0){
+    			  p = order(s);
+    		  }
+    		  return p;
+    	  }
+    	  else if(len == 6){ //4带2 或者 顺子/连对/三连对
+    		  if(s.at(0).point == s.at(3).point){
+    			  return pokerData(6, s.at(0).suits, s.at(0).point);
+    		  }
+    		  else if(s.at(1).point == s.at(4).point){
+    			  return pokerData(6, s.at(1).suits, s.at(1).point);
+    		  }
+    		  else if(s.at(2).point == s.at(5).point){
+    			  return pokerData(6, s.at(2).suits, s.at(2).point);
+    		  }
+    		  else{
+    			  return order(s);
+    		  }
+    	  }
+    	  else if(len == 7){ //只能是顺子
+    		  return order(s);
+    	  }
+    	  else if(len == 8){ //飞机或者顺子
+    		  pokerData p = plane(s);
+    		  if(p.type == 0){
+    			  p = order(s);
+    		  }
+    		  return p;
+    	  }
+    	  else if(len == 9){
+
+    	  }
+    	  else if(len == 10){
+
+    	  }
+    	  else if(len == 11){
+
+    	  }
+    	  else if(len == 12){
+
+    	  }
+    	  else if(len == 13){
+
+    	  }
+    	  else if(len == 14){
+
+    	  }
+    	  else if(len == 15){
+
+    	  }
+    	  else if(len == 16){
+
+    	  }
+    	  else if(len == 17){
+
+    	  }
+    	  else if(len == 18){
+
+    	  }
+    	  else if(len == 19){
+
+    	  }
+    	  else if(len == 20){
+
+    	  }
     	  return pd;
       }
 
@@ -385,16 +539,8 @@ class doudizhu : public eosio::contract {
       bool deletepoker(vector<poker> deletearray, vector<poker> fromarray){
     	  return false;
       }
-      //检查一轮出牌
-      void checkround(uint64_t gameid){
-    	  game g = games_all.at(gameid);
-    	  for(int i = 0; i < g.players.size(); ++i){
-    		  player p = g.players.at(i);
-
-    	  }
-      }
 
 };
 
-EOSIO_ABI( doudizhu, (create)(join)(autojoin)(leave)(qdz)(chupai) )
+EOSIO_ABI( doudizhu, (create)(join)(autojoin)(leave)(qdz)(chupai)(buchu) )
 
