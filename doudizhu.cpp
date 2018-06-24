@@ -17,10 +17,22 @@ class doudizhu : public eosio::contract {
     	  uint8_t type;						//牌型
     	  uint8_t suits;					//花色
     	  uint8_t point;					//点数
-    	  pokerData(uint8_t _type, uint8_t _suits, uint8_t _point){
+    	  uint8_t len;						//牌个数
+    	  pokerData(uint8_t _type, uint8_t _suits, uint8_t _point, uint8_t _len){
     		  type = _type;
     		  suits = _suits;
     		  point = _point;
+    		  len = _len;
+    	  }
+      };
+      struct planeData{
+    	  vector<poker> p1;
+    	  vector<poker> p2;
+    	  uint8_t k;
+    	  planeData(vector<poker> _p1, vector<poker> _p2, uint8_t _k){
+    		  p1 = _p1;
+    		  p2 = _p2;
+    		  k = _k;
     	  }
       };
       struct player{
@@ -328,13 +340,7 @@ class doudizhu : public eosio::contract {
 
     	  for(int i = 0; i < 54; ++i){
     		  uint8_t r = random() % 54;
-    		  uint8_t suits, point;
-    		  suits = pokerarray.at(i).suits;
-    		  point = pokerarray.at(i).point;
-    		  pokerarray.at(i).suits = pokerarray.at(r).suits;
-    		  pokerarray.at(i).point = pokerarray.at(r).point;
-    		  pokerarray.at(r).suits = suits;
-    		  pokerarray.at(r).point = point;
+    		  swappoker(pokerarray.at(i), pokerarray.at(r));
     	  }
 
     	  return pokerarray;
@@ -391,6 +397,16 @@ class doudizhu : public eosio::contract {
           v.push_back(s.substr(pos1));
       }
 
+      void swappoker(poker & p1, poker & p2){
+		  uint8_t suits, point;
+		  suits = p1.suits;
+		  point = p1.point;
+		  p1.suits = p2.suits;
+		  p1.point = p2.point;
+		  p2.suits = suits;
+		  p2.point = point;
+      }
+
       vector<poker> str2poker(std::string pokerstr){
     	  vector<poker> pokerarray;
     	  vector<std::string> pokerstrarray;
@@ -410,21 +426,142 @@ class doudizhu : public eosio::contract {
 
       //给牌排序
       vector<poker> sortpoker(vector<poker> pokerarray){
-    	  //TODO:
-    	  return pokerarray;
+    	 int8_t n = pokerarray.size();
+ 	     for(int i = 1; i < n; i++){
+ 	         if(pokerarray.at(i).point > pokerarray.at(i - 1).point){
+ 	        	 int8_t temppoint = pokerarray.at(i).point;
+ 	        	 int8_t tempsuits = pokerarray.at(i).suits;
+ 	        	 int j;
+ 	        	 for(j = i-1; j >= 0 && pokerarray.at(i).point < temppoint; j--){
+ 	        		 pokerarray.at(j+1).point = pokerarray.at(j).point;
+ 	        		 pokerarray.at(j+1).suits = pokerarray.at(j).suits;
+ 	        	 }
+ 	        	 pokerarray.at(j+1).point = temppoint;
+ 	        	 pokerarray.at(j+1).suits = tempsuits;
+ 	         }
+ 	     }
+    	 return pokerarray;
+      }
+      //截断飞机
+      planeData cutplane(vector<poker> pokerarray){
+    	  int k = 0;
+    	  int index = 0;
+    	  vector<poker> temparray;
+    	  vector<poker> leftarray;
+
+    	  for(int i = 0; i < pokerarray.size() - 2; ++i){
+    		  if(pokerarray.at(i).point == pokerarray.at(i+2).point){
+    			  k++;
+    			  if(k == 1) index = i;  //保存第一个三张牌的第一张牌下标
+    		  }
+    	  }
+
+    	  for(int i = 0; i < pokerarray.size(); ++i){
+    		  if(i >= index && i != (index +(3*k))){
+    			  temparray.push_back(pokerarray.at(i));  //将3张牌拿出来放到一个新数组
+    		  }
+    		  else{
+    			  leftarray.push_back(pokerarray.at(i));  //将非3张牌拿出来放到一个新数组
+    		  }
+    	  }
+    	  return planeData(temparray, leftarray, k);
       }
 
-      //判断是否为飞机
-      pokerData plane(vector<poker> pokerarray){
-    	  //TODO
-    	  return pokerData(0, 0, 0);
-      }
-      //判断是否为顺子
-      pokerData order(vector<poker> pokerarray){
-    	  //TODO
-    	  return pokerData(0, 0, 0);
-      }
+      //判断是否为飞机，是的话返回点数
+      int plane(vector<poker> pokerarray, uint8_t type){
+    	  planeData planedata = cutplane(pokerarray);
+    	  uint8_t len = pokerarray.size();
+    	  int ret = 0;
+    	  switch(planedata.k){
+    	  case 1:
+    		  if(len == 4 || len == 5)
+    			  ret = order(planedata.p1, 9, 3);
+    		  else
+    			  return 0;
+    		  break;
+    	  case 2:
+    		  if(len == 8 || len == 10)
+    			  ret = order(planedata.p1, 9, 3);
+    		  else
+    			  return 0;
+    		  break;
+    	  case 3:
+    		  if(len == 12 || len == 15)
+    			  ret = order(planedata.p1, 9, 3);
+    		  else
+    			  return 0;
+    		  break;
+    	  case 4:
+    		  if(len == 16 || len == 20)
+    			  ret = order(planedata.p1, 9, 3);
+    		  else
+    			  return 0;
+    		  break;
+    	  case 5:
+    		  if(len == 20)
+    			  ret = order(planedata.p1, 9, 3);
+    		  else
+    			  return 0;
+    		  break;
+    	  }
 
+    	  switch(type){
+    	  case 10:  //3带1
+    		  if(ret)
+    			  return planedata.p1.at(0).point;
+    		  else
+    			  return 0;
+    		  break;
+    	  case 11:	//3带1对
+    		  if(ret){
+    			  for(int i = 0; i < planedata.p2.size() - 2; i+=2){
+    				  if(planedata.p2.at(i).point != planedata.p2.at(i+1).point)
+    					  return 0;
+    			  }
+    			  return planedata.p1.at(0).point;
+    		  }
+    		  break;
+    	  }
+    	  return ret;
+      }
+      //判断是否为顺子，type：7代表顺子 8代表连对 9代表三连对  plus：自增
+      bool order(vector<poker> pokerarray, uint8_t type, uint8_t plus){
+    	  for(int i = 0; i < pokerarray.size() - 1; i+=plus){
+    		  if(pokerarray.at(i).point < 13){ //最大的牌在3-A之间
+    			  if(type == 7){  //判断是否顺子
+    				  if(pokerarray.at(i).point != pokerarray.at(i+1).point + 1){
+    					  return false;
+    				  }
+    			  }
+    			  else if(type == 8){ //判断是否连对
+    				  if(pokerarray.at(i).point != pokerarray.at(i+1).point &&
+    						  pokerarray.at(i+1).point != pokerarray.at(i+2).point + 1){
+    					  return false;
+    				  }
+    			  }
+    			  else if(type == 9){ //判断是否三连对
+    				  if(pokerarray.size() == 3 &&
+    						  pokerarray.at(i).point != pokerarray.at(i+2).point){
+    					  return false;
+    				  }
+    				  else if(pokerarray.at(i).point != pokerarray.at(i+2).point &&
+    						  pokerarray.at(i).point != pokerarray.at(i+3).point + 1){
+    					  return false;
+    				  }
+    			  }
+    		  }
+    		  else{  //3条2
+    			  if(pokerarray.size() == 3 &&
+    					  pokerarray.at(i).point != pokerarray.at(i+2).point){
+    				  return true;
+    			  }
+    			  else
+    				  return false;
+    		  }
+    	  }
+    	  return true;
+      }
+      //判断出牌的类型
       pokerData poker2data(vector<poker> pokerarray){
     	  pokerData pd;
     	  vector<poker> s = sortpoker(pokerarray);
@@ -433,14 +570,14 @@ class doudizhu : public eosio::contract {
     		  return pd;
     	  }
     	  else if(len == 1){
-    		  return pokerData(1, s.at(0).suits, s.at(0).point);
+    		  return pokerData(1, s.at(0).suits, s.at(0).point, 1);
     	  }
     	  else if(len == 2){
     		  if(s.at(0).point == 14 && s.at(1).point == 14 && s.at(0).suits == 1 && s.at(0).suits == 0){  //王炸
-    			  return pokerData(13, s.at(0).suits, s.at(0).point);
+    			  return pokerData(13, s.at(0).suits, s.at(0).point, 2);
     		  }
     		  else if(s.at(0).point == s.at(1).point){ //对子
-    			  return pokerData(2, s.at(0).suits, s.at(0).point);
+    			  return pokerData(2, s.at(0).suits, s.at(0).point, 2);
     		  }
     		  else{
     			  return pd;
@@ -448,7 +585,7 @@ class doudizhu : public eosio::contract {
     	  }
     	  else if(len == 3){
     		  if(s.at(0).point == s.at(1).point && s.at(1).point == s.at(2).point){ //三条
-    			  return pokerData(3, s.at(0).suits, s.at(0).point);
+    			  return pokerData(3, s.at(0).suits, s.at(0).point, 3);
     		  }
     		  else{
     			  return pd;
@@ -456,88 +593,202 @@ class doudizhu : public eosio::contract {
     	  }
     	  else if(len == 4){ //炸弹或者飞机
     		  if(s.at(0).point == s.at(1).point && s.at(1).point == s.at(2).point && s.at(2).point == s.at(3).point){ //炸弹
-    			  return pokerData(12, s.at(0).suits, s.at(0).point);
+    			  return pokerData(12, s.at(0).suits, s.at(0).point, 4);
     		  }
     		  else{
-    			  return plane(s);
+    			  int ret = plane(s, 10); //3带1
+    			  if(ret)
+    				  return pokerData(4, s.at(0).suits, ret, 4);
     		  }
     	  }
     	  else if(len == 5){ //3带2 或者是 顺子
-    		  pokerData p = plane(s);
+    		  pokerData p = plane(s, 11); //3带2
     		  if(p.type == 0){
-    			  p = order(s);
+    			  bool ret = order(s, 7, 1);
+    			  if(ret)
+    				  return pokerData(5, s.at(0).suits, s.at(0).point, 5);
     		  }
     		  return p;
     	  }
     	  else if(len == 6){ //4带2 或者 顺子/连对/三连对
     		  if(s.at(0).point == s.at(3).point){
-    			  return pokerData(6, s.at(0).suits, s.at(0).point);
+    			  return pokerData(6, s.at(0).suits, s.at(0).point, 6);
     		  }
     		  else if(s.at(1).point == s.at(4).point){
-    			  return pokerData(6, s.at(1).suits, s.at(1).point);
+    			  return pokerData(6, s.at(1).suits, s.at(1).point, 6);
     		  }
     		  else if(s.at(2).point == s.at(5).point){
-    			  return pokerData(6, s.at(2).suits, s.at(2).point);
+    			  return pokerData(6, s.at(2).suits, s.at(2).point, 6);
     		  }
-    		  else{
-    			  return order(s);
+    		  else{ //顺子/连对/三连对
+    			  bool pd1 = order(s, 7, 1);
+    			  bool pd2 = order(s, 8, 2);
+    			  bool pd3 = order(s, 9, 3);
+
+    			  if(pd1){
+    				  return pokerData(7, s.at(0).suits, s.at(0).point, 6);
+    			  }
+    			  else if(pd2){
+    				  return pokerData(8, s.at(0).suits, s.at(0).point, 6);
+    			  }
+    			  else if(pd3){
+    				  return pokerData(9, s.at(0).suits, s.at(0).point, 6);
+    			  }
     		  }
     	  }
     	  else if(len == 7){ //只能是顺子
-    		  return order(s);
+    		  bool ret = order(s, 7, 1);
+    		  if(ret)
+				  return pokerData(7, s.at(0).suits, s.at(0).point, 7);
     	  }
     	  else if(len == 8){ //飞机或者顺子
-    		  pokerData p = plane(s);
-    		  if(p.type == 0){
-    			  p = order(s);
-    		  }
-    		  return p;
-    	  }
-    	  else if(len == 9){
+    		  int p = plane(s, 10);
+			  bool pd1 = order(s, 7, 1);
+			  bool pd2 = order(s, 8, 2);
 
+			  if(p){
+				  return pokerData(10, s.at(0).suits, p, 8);
+			  }
+			  else if(pd1){
+				  return pokerData(7, s.at(0).suits, s.at(0).point, 8);
+			  }
+			  else if(pd2){
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 8);
+			  }
+    	  }
+    	  else if(len == 9){  //顺子或三连对
+			  bool pd1 = order(s, 7, 1);
+			  bool pd2 = order(s, 9, 3);
+			  if(pd1){
+				  return pokerData(7, s.at(0).suits, s.at(0).point, 9);
+			  }
+			  else if(pd2){
+				  return pokerData(9, s.at(0).suits, s.at(0).point, 9);
+			  }
     	  }
     	  else if(len == 10){
+    		  int p = plane(s, 11);
+			  bool pd1 = order(s, 7, 1);
+			  bool pd2 = order(s, 8, 2);
 
+			  if(p){
+				  return pokerData(11, s.at(0).suits, p, 10);
+			  }
+			  else if(pd1){
+				  return pokerData(7, s.at(0).suits, s.at(0).point, 10);
+			  }
+			  else if(pd2){
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 10);
+			  }
     	  }
     	  else if(len == 11){
-
+    		  bool ret = order(s, 7, 1);
+    		  if(ret)
+    			  return pokerData(7, s.at(0).suits, s.at(0).point, 11);
     	  }
     	  else if(len == 12){
+    		  int p = plane(s, 10);
+			  bool pd1 = order(s, 7, 1);
+			  bool pd2 = order(s, 8, 2);
+			  bool pd3 = order(s, 9, 3);
 
-    	  }
-    	  else if(len == 13){
-
+			  if(p){
+				  return pokerData(10, s.at(0).suits, p, 12);
+			  }
+			  else if(pd1){
+				  return pokerData(7, s.at(0).suits, s.at(0).point, 12);
+			  }
+			  else if(pd2){
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 12);
+			  }
+			  else if(pd3){
+				  return pokerData(9, s.at(0).suits, s.at(0).point, 12);
+			  }
     	  }
     	  else if(len == 14){
-
+    		  bool ret = order(s, 8, 2);
+    		  if(ret)
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 14);
     	  }
     	  else if(len == 15){
+    		  int p = plane(s, 11);
+			  bool pd1 = order(s, 9, 3);
 
+			  if(p){
+				  return pokerData(11, s.at(0).suits, p, 15);
+			  }
+			  else if(pd1){
+				  return pokerData(9, s.at(0).suits, s.at(0).point, 15);
+			  }
     	  }
     	  else if(len == 16){
+    		  int p = plane(s, 10);
+			  bool pd1 = order(s, 8, 2);
 
-    	  }
-    	  else if(len == 17){
-
+			  if(p){
+				  return pokerData(10, s.at(0).suits, p, 16);
+			  }
+			  else if(pd1){
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 16);
+			  }
     	  }
     	  else if(len == 18){
+			  bool pd1 = order(s, 8, 2);
+			  bool pd2 = order(s, 9, 3);
 
-    	  }
-    	  else if(len == 19){
-
+			  if(pd1){
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 18);
+			  }
+			  else if(pd2){
+				  return pokerData(9, s.at(0).suits, s.at(0).point, 18);
+			  }
     	  }
     	  else if(len == 20){
+    		  int p1 = plane(s, 10);
+    		  int p2 = plane(s, 11);
+			  bool pd1 = order(s, 8, 2);
 
+			  if(p1){
+				  return pokerData(10, s.at(0).suits, p1, 20);
+			  }
+			  else if(pd1){
+				  return pokerData(8, s.at(0).suits, s.at(0).point, 20);
+			  }
+			  else if(p2){
+				  return pokerData(11, s.at(0).suits, p2, 20);
+			  }
     	  }
     	  return pd;
       }
 
       bool vs(pokerData newdata, pokerData olddata){
+    	  if(newdata.type == olddata.type){  //牌型一样的时候
+    		  if(newdata.len != olddata.len)
+    			  return false;
+    		  else{
+    			  if(newdata.len == 1 && newdata.point == 14 && olddata.point == 14){
+    				  return newdata.suits > olddata.suits;
+    			  }
+    			  return newdata.point > olddata.point;
+    		  }
+    	  }
+    	  else{
+    		  return (newdata.type > 11 && olddata.type != 13);  //选择的牌型为王炸和炸弹且场面牌不为王炸
+    	  }
     	  return false;
       }
 
-      bool deletepoker(vector<poker> deletearray, vector<poker> fromarray){
-    	  return false;
+      bool deletepoker(vector<poker> deletearray, vector<poker> & fromarray){
+    	  int len = fromarray.size();
+    	  for(int i = 0; i < deletearray.size(); ++i){
+    		  poker p = deletearray.at(i);
+    		  for(vector<poker>::iterator itr = fromarray.begin(); itr != fromarray.end(); ++ itr){
+    			  if(itr->point == p.point && itr->suits == p.suits){
+    				  fromarray.erase(itr);
+    			  }
+    		  }
+    	  }
+    	  return (fromarray.size() == len - deletearray.size());
       }
 
 };
