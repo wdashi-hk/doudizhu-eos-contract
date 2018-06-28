@@ -1,4 +1,7 @@
 #include <eosiolib/eosio.hpp>
+#include <eosiolib/currency.hpp>
+#include <eosio.token/eosio.token.hpp>
+
 using namespace eosio;
 
 class doudizhu : public eosio::contract {
@@ -71,13 +74,21 @@ class doudizhu : public eosio::contract {
     	  game_status status;					//游戏状态
     	  vector<player> players;				//游戏玩家
     	  vector<poker> poker_array_dz;			//地主的底牌
-    	  uint8_t game_level;					//游戏级别，1分 2分 3分，炸弹翻倍。默认0分
     	  uint8_t turn_index;					//出牌、抢地主的人
     	  vector<qdz_data> qdz_data_array;		//保存抢地主的数据
     	  vector<chupai_data> chupai_data_array;//保存一轮出牌数据
+
+    	  uint8_t game_level;					//游戏级别，1分 2分 3分，炸弹翻倍。默认0分
+    	  uint64_t token_amount;				//抵押的币总数
+    	  uint8_t base_token;					//基数
+    	  uint8_t max_level;					//最大的倍数
       };
 
-      const static uint8_t MAX_PLAYER_NUM = 3;		//最多3个玩家
+      const static uint8_t MAX_PLAYER_NUM = 3;					//最多3个玩家
+      account_name feeaccount = N(doudizhu);					//收取手续费的账号
+      account_name adminaccount = N(doudizhu);					//管理员的账号
+      uint8_t fee = 100;										//手续费，默认1%
+
 
       vector<game> games_all;						//存储所有游戏
       uint8_t max_games_can_join;					//最多可以加入的游戏数量
@@ -87,8 +98,9 @@ class doudizhu : public eosio::contract {
       vector<uint64_t> games_id_end;				//存储所有结束的游戏id
 
       //创建游戏
-      void create(account_name name, uint64_t & gameid){
+      void create(account_name name, uint64_t & gameid, uint8_t base, uint8_t maxlevel){
   		require_auth(name);
+  		eosio_assert(name == adminaccount, "can't do it!");
   		uint8_t s = games_id_can_join.size();
   		if(s == max_games_can_join){
   			print("max games can join, can not create");
@@ -100,6 +112,8 @@ class doudizhu : public eosio::contract {
 
   		game g;
   		g.game_id = games_all.size();
+  		g.base_token = base;
+  		g.max_level = maxlevel;
   		games_all.push_back(g);
   		games_id_can_join.push_back(g.game_id);
   		gameid = g.game_id;
@@ -130,12 +144,12 @@ class doudizhu : public eosio::contract {
   		}
       }
       //自动加入
-      void autojoin(account_name name){
+      void autojoin(account_name name, uint8_t base, uint8_t maxlevel){
     	  require_auth(name);
     	  uint64_t size = games_id_can_join.size();
     	  if(size < min_games_can_join){  //新建一局游戏再加入
     		  uint64_t gameid;
-    		  create(name, gameid);
+    		  create(name, gameid, base, maxlevel);
     		  join(name, gameid);
     	  }
     	  else{	//随机加入
@@ -151,9 +165,23 @@ class doudizhu : public eosio::contract {
     	  int playerindex;
 		  eosio_assert(playeringame(name, gameid, playerindex), "player not in this game!");
     	  if(g.status >= E_QDZ){  //强制退出游戏，扣分，游戏结束
-    		  //TODO: kou fen
+    		  player p = g.players.at(playerindex);
+    		  p.is_win = false;
+    		  if(playerindex == 0){
+    			  g.players.at(1).is_win = true;
+    			  g.players.at(2).is_win = true;
+    		  }
+    		  else if(playerindex == 1){
+    			  g.players.at(0).is_win = true;
+    			  g.players.at(2).is_win = true;
+    		  }
+    		  else if(playerindex == 2){
+    			  g.players.at(1).is_win = true;
+    			  g.players.at(0).is_win = true;
+    		  }
     		  g.status = E_END;
     		  games_id_end.push_back(gameid);
+    		  endgame(gameid);
     	  }
     	  else{
     		  for(vector<player>::iterator itr = g.players.begin(); itr != g.players.end(); ++itr){
@@ -273,7 +301,7 @@ class doudizhu : public eosio::contract {
 			  g.turn_index = (g.turn_index + 1) % MAX_PLAYER_NUM;
 			  g.chupai_data_array.push_back(chupai_data(playerindex, pd));
 			  if(p.poker_array.size() == 0){  //出完牌了，游戏结束
-				  endgame(gameid, p);
+				  endgame(gameid);
 				  return;
 			  }
 			  if(g.chupai_data_array.size() == MAX_PLAYER_NUM){
@@ -366,9 +394,26 @@ class doudizhu : public eosio::contract {
 		  g.turn_index = turnindex;
       }
       //结束游戏
-      void endgame(uint64_t gameid, player winplayer){
-
+      void endgame(uint64_t gameid){
+    	  game g = games_all.at(gameid);
+    	  for(int i = 0; i < g.players.size(); ++i){
+    		  player p = g.players.at(i);
+    		  if(p.is_win){
+    			  uint8_t plus = 1;
+    			  if(p.is_dz) plus *= 2;
+    			  uint64_t amount = g.token_amount/3 + g.game_level * g.base_token * plus;
+    			  uint64_t feeamount = amount * fee / 10000;  //扣除手续费
+    			  transferSYS(feeaccount, p.player_name, amount - feeamount);
+    		  }
+    		  else{
+    			  uint8_t plus = 1;
+    			  if(p.is_dz) plus *= 2;
+    			  uint64_t amount = g.token_amount/3 - g.game_level * g.base_token * plus;
+    			  transferSYS(feeaccount, p.player_name, amount);
+    		  }
+    	  }
       }
+      //判断是否在游戏中
       bool playeringame(account_name user,uint64_t gameid, int & playerindex){
     	  game g = games_all.at(gameid);
     	  playerindex = -1;
@@ -789,6 +834,21 @@ class doudizhu : public eosio::contract {
     		  }
     	  }
     	  return (fromarray.size() == len - deletearray.size());
+      }
+
+      //转账SYS
+      bool transferSYS(account_name _from, account_name _to, uint64_t _amount){
+    	  extended_asset amount(100,S(4,SYS));
+    	  amount.contract = N(eosio.token);
+    	  currency::inline_transfer(_from, _to, amount);
+      }
+
+      //获取SYS帐户余额
+      asset getSYSBalance(account_name name){
+    	  eosio::token t(N(eosio.token));
+    	  const auto sym_name = eosio::symbol_type(S(4,SYS)).name();
+    	  const auto my_balance = t.get_balance(N(myaccount), sym_name );
+    	  return my_balance;
       }
 
 };
